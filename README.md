@@ -74,6 +74,11 @@ npm run preview    # ビルド成果物をローカルプレビュー
 | HTTPS（dev） | @vitejs/plugin-basic-ssl |
 | 履歴永続化 | localStorage |
 
+## 商標について
+
+QR コードは株式会社デンソーウェーブの登録商標です。
+QR Code is a registered trademark of DENSO WAVE INCORPORATED.
+
 ## 既知の制約
 
 - カメラを一度「ブロック」した後は、ブラウザ仕様により JavaScript からの再プロンプト不可。

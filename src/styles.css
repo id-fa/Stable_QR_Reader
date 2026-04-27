@@ -241,3 +241,16 @@ button:disabled {
   padding: 3px 8px;
   min-height: auto;
 }
+
+.legal {
+  max-width: 1200px;
+  margin: 16px auto 24px;
+  padding: 0 16px;
+  color: var(--text-dim);
+  font-size: 11px;
+  line-height: 1.5;
+  text-align: center;
+}
+.legal p {
+  margin: 2px 0;
+}
