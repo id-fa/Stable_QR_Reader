@@ -121,6 +121,10 @@ export class Scanner {
     return this.stream !== null;
   }
 
+  isMirrored(): boolean {
+    return this.mirrored;
+  }
+
   getCapabilityFlags(): CapabilityFlags {
     const c = this.capabilities;
     return {
@@ -209,6 +213,7 @@ export class Scanner {
             });
           } else {
             this.failureFrames++;
+            this.onResults([]);
             await this.maybeAdjust(ctx, w, h);
           }
         }

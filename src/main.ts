@@ -1,5 +1,6 @@
 import './styles.css';
 import { Scanner, type ScannerStatus } from './scanner';
+import type { DetectedCode } from './decoder';
 import { History } from './history';
 
 const app = document.getElementById('app');
@@ -11,6 +12,7 @@ app.innerHTML = `
     <section class="viewer">
       <div class="video-wrap">
         <video id="video" playsinline muted></video>
+        <canvas id="overlay"></canvas>
       </div>
       <div class="controls">
         <select id="camera-select" aria-label="カメラ選択"></select>
@@ -41,6 +43,7 @@ app.innerHTML = `
 `;
 
 const video = document.getElementById('video') as HTMLVideoElement;
+const overlay = document.getElementById('overlay') as HTMLCanvasElement;
 const cameraSelect = document.getElementById('camera-select') as HTMLSelectElement;
 const startBtn = document.getElementById('start-btn') as HTMLButtonElement;
 const stopBtn = document.getElementById('stop-btn') as HTMLButtonElement;
@@ -167,8 +170,50 @@ function setRunningUI(running: boolean): void {
   startBtn.textContent = running ? '実行中' : '開始';
 }
 
+function syncOverlay(): void {
+  if (video.videoWidth && video.videoHeight) {
+    if (overlay.width !== video.videoWidth) overlay.width = video.videoWidth;
+    if (overlay.height !== video.videoHeight) overlay.height = video.videoHeight;
+  }
+  overlay.style.transform = scanner.isMirrored() ? 'scaleX(-1)' : 'none';
+}
+
+function drawOverlay(codes: DetectedCode[]): void {
+  syncOverlay();
+  const ctx = overlay.getContext('2d');
+  if (!ctx) return;
+  ctx.clearRect(0, 0, overlay.width, overlay.height);
+  if (codes.length === 0) return;
+
+  const lineWidth = Math.max(3, overlay.width / 250);
+  ctx.lineWidth = lineWidth;
+  ctx.lineJoin = 'round';
+  ctx.strokeStyle = '#2bb673';
+  ctx.fillStyle = 'rgba(43, 182, 115, 0.18)';
+
+  for (const c of codes) {
+    const cp = c.cornerPoints;
+    if (cp && cp.length >= 4) {
+      ctx.beginPath();
+      ctx.moveTo(cp[0].x, cp[0].y);
+      for (let i = 1; i < cp.length; i++) ctx.lineTo(cp[i].x, cp[i].y);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    } else if (c.boundingBox) {
+      const bb = c.boundingBox;
+      ctx.fillRect(bb.x, bb.y, bb.width, bb.height);
+      ctx.strokeRect(bb.x, bb.y, bb.width, bb.height);
+    }
+  }
+}
+
+video.addEventListener('loadedmetadata', syncOverlay);
+
 scanner.onStatus = showStatus;
 scanner.onResults = (codes) => {
+  drawOverlay(codes);
+  if (codes.length === 0) return;
   for (const c of codes) history.add(c.rawValue);
   renderHistory();
 };
@@ -187,6 +232,7 @@ startBtn.addEventListener('click', async () => {
 stopBtn.addEventListener('click', () => {
   scanner.stop();
   setRunningUI(false);
+  drawOverlay([]);
   showStatus({ level: 'info', message: '停止しました。' });
 });
 

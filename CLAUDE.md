@@ -40,15 +40,25 @@ src/
 
 ```
 Scanner.scanLoop (rAF)
-  ├─ video → canvas に描画
+  ├─ video → canvas に描画（反転処理は加えない）
   ├─ decoder.detect(canvas) → DetectedCode[]
-  │   ├─ 検出あり → onResults → main.ts が history.add → renderHistory
-  │   └─ 検出なし → failureFrames++ → maybeAdjust
+  │   ├─ 検出あり → onResults(codes) → main.ts が drawOverlay + history.add + renderHistory
+  │   └─ 検出なし → failureFrames++
+  │                  ├─ onResults([]) で overlay をクリア
   │                  ├─ 中央 120x120 の輝度サンプリングで状態判定
   │                  ├─ onStatus で行動指示
   │                  └─ 一定間隔で tryAdjustOptics（フォーカス試行）
   └─ 次フレームへ
 ```
+
+### overlay canvas（検出位置のハイライト）
+
+- `index.html` 上では `<video>` と `<canvas id="overlay">` を `.video-wrap` 内に重ねている。
+  両者とも `object-fit: cover` で同じクロップを受けるため、cornerPoints をそのまま描画して位置が合う。
+- overlay の内部解像度は `videoWidth × videoHeight` に同期（`loadedmetadata` と `syncOverlay()` で）。
+- 内蔵カメラ等で video が `scaleX(-1)` で鏡像表示される場合、overlay にも同じ transform を当てて
+  座標変換を不要にしている（`Scanner.isMirrored()` を main.ts から参照）。
+- 描画は main.ts の `drawOverlay(codes)` が担当。Scanner は描画ロジックを持たない。
 
 ## 設計指針からの不変条件
 
@@ -62,6 +72,18 @@ Scanner.scanLoop (rAF)
 5. **能力差を吸収** — `track.getCapabilities()` の有無・キーの有無を毎回チェックし、
    存在しない機能は黙って諦める（例外を投げない）。
 6. **ファイル画像にも対応** — カメラ起動なしで `detectFromFile` が動くこと。
+7. **検出時はビジュアルでも示す** — overlay canvas に cornerPoints / boundingBox で枠を描画する。
+   検出が外れたフレームは即クリアする（残像を残さない）。
+8. **`onResults` は毎フレーム呼ばれる契約** — 検出なしのフレームでも `onResults([])` を発火する。
+   overlay クリアがこれに依存しているので、空配列の発火を止めないこと。
+
+## 設計判断（やらないこと）
+
+- **固定の「ここに収めて」ガイド枠は出さない**
+  - 内蔵カメラの最短焦点距離はまちまち（30〜50cm）かつ QR の物理サイズもまちまちなため、
+    固定枠で誘導すると却って合焦できない／読めない状態を招く。
+  - `BarcodeDetector` は中央以外のコードも検出できるので、枠で限定すると強みを潰す。
+  - 代わりに「検出されたコードを枠で示す」フィードバック方針（不変条件 7）を採る。
 
 ## コーディング規約
 
