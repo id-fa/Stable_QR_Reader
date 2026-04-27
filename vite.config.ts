@@ -13,6 +13,9 @@ export default defineConfig({
         entryFileNames: 'assets/index.js',
         chunkFileNames: 'assets/[name].js',
         assetFileNames: 'assets/[name][extname]',
+        manualChunks(id) {
+          if (id.includes('@zxing')) return 'zxing';
+        },
       },
     },
   },

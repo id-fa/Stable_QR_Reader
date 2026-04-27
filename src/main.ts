@@ -146,16 +146,29 @@ function renderHistory(): void {
 async function refreshCameraList(promptIfNeeded = false): Promise<void> {
   try {
     const cams = await Scanner.listCameras(promptIfNeeded);
-    const current = cameraSelect.value;
     cameraSelect.innerHTML = '';
+
+    // 先頭は常に「デフォルト」エントリ（empty value → facingMode: environment）
+    const defaultOpt = document.createElement('option');
+    defaultOpt.value = '';
+    defaultOpt.textContent = 'デフォルト / Default';
+    cameraSelect.appendChild(defaultOpt);
+
+    // 権限取得済み（label が入っている）デバイスのみ列挙
     for (const c of cams) {
+      if (!c.label) continue;
       const opt = document.createElement('option');
       opt.value = c.deviceId;
       opt.textContent = c.label;
       cameraSelect.appendChild(opt);
     }
-    if (current && cams.some((c) => c.deviceId === current)) {
-      cameraSelect.value = current;
+
+    // 動作中のストリームがあれば、その実 deviceId に選択を合わせる
+    const activeId = scanner.getActiveDeviceId();
+    if (activeId && cams.some((c) => c.deviceId === activeId && c.label)) {
+      cameraSelect.value = activeId;
+    } else {
+      cameraSelect.value = '';
     }
   } catch (e) {
     console.warn('カメラ列挙失敗', e);
@@ -164,11 +177,29 @@ async function refreshCameraList(promptIfNeeded = false): Promise<void> {
 
 function updateCapabilityDisplay(): void {
   const caps = scanner.getCapabilityFlags();
+  const rt = scanner.getRuntimeInfo();
   const items: string[] = [];
+  if (rt.primary) {
+    const labelOf = (k: 'native' | 'jsqr' | 'zxing'): string =>
+      k === 'native' ? 'BarcodeDetector' : k === 'jsqr' ? 'jsQR' : 'ZXing';
+    const primaryLabel = labelOf(rt.primary);
+    const secondaryLabel: string = rt.secondaryActive
+      ? rt.primary === 'native'
+        ? ' + jsQR'
+        : ' + ZXing'
+      : '';
+    items.push(`検出方式 / Decoder: ${primaryLabel}${secondaryLabel}`);
+  }
   if (caps.focusModes.length) items.push(`フォーカス / Focus: ${caps.focusModes.join('/')}`);
   else items.push('フォーカス / Focus: 制御不可（パンフォーカス想定） / not controllable (assumes pan-focus)');
+  if (caps.focusDistance) {
+    items.push(`合焦距離 / Focus distance: ${caps.focusDistance.min}〜${caps.focusDistance.max}`);
+  }
   if (caps.exposureModes.length) items.push(`露出 / Exposure: ${caps.exposureModes.join('/')}`);
   if (caps.zoom) items.push(`ズーム / Zoom: ×${caps.zoom.min}〜×${caps.zoom.max}`);
+  if (rt.currentZoom !== null) {
+    items.push(`現在のズーム / Current zoom: ×${rt.currentZoom.toFixed(1)}`);
+  }
   if (caps.torch) items.push('ライト / Light: 利用可 / available');
   if (caps.facingMode) items.push(`向き / Facing: ${caps.facingMode}`);
   capabilityEl.textContent = items.join(' ・ ');
@@ -233,6 +264,7 @@ function drawOverlay(codes: DetectedCode[]): void {
 video.addEventListener('loadedmetadata', syncOverlay);
 
 scanner.onStatus = showStatus;
+scanner.onRuntimeChange = updateCapabilityDisplay;
 scanner.onResults = (codes) => {
   drawOverlay(codes);
   if (codes.length === 0) return;
@@ -263,6 +295,7 @@ cameraSelect.addEventListener('change', async () => {
   if (!scanner.isActive()) return;
   try {
     await scanner.start(cameraSelect.value);
+    await refreshCameraList(false);
     updateCapabilityDisplay();
     applyVideoTransforms();
   } catch {

@@ -8,7 +8,7 @@ export interface DetectedCode {
 }
 
 export interface Decoder {
-  readonly kind: 'native' | 'jsqr';
+  readonly kind: 'native' | 'jsqr' | 'zxing';
   detect(source: CanvasImageSource & { width?: number; height?: number }): Promise<DetectedCode[]>;
 }
 
@@ -40,19 +40,21 @@ export async function createDecoder(): Promise<Decoder> {
           async detect(source) {
             try {
               const codes = await detector.detect(source);
-              return codes.map((c) => ({
-                rawValue: c.rawValue,
-                format: c.format,
-                cornerPoints: c.cornerPoints,
-                boundingBox: c.boundingBox
-                  ? {
-                      x: c.boundingBox.x,
-                      y: c.boundingBox.y,
-                      width: c.boundingBox.width,
-                      height: c.boundingBox.height,
-                    }
-                  : undefined,
-              }));
+              return codes
+                .filter((c) => typeof c.rawValue === 'string' && c.rawValue.length > 0)
+                .map((c) => ({
+                  rawValue: c.rawValue,
+                  format: c.format,
+                  cornerPoints: c.cornerPoints,
+                  boundingBox: c.boundingBox
+                    ? {
+                        x: c.boundingBox.x,
+                        y: c.boundingBox.y,
+                        width: c.boundingBox.width,
+                        height: c.boundingBox.height,
+                      }
+                    : undefined,
+                }));
             } catch {
               return [];
             }
@@ -64,6 +66,10 @@ export async function createDecoder(): Promise<Decoder> {
     }
   }
 
+  return createJsqrDecoder();
+}
+
+export function createJsqrDecoder(): Decoder {
   return {
     kind: 'jsqr',
     async detect(source) {
@@ -71,7 +77,7 @@ export async function createDecoder(): Promise<Decoder> {
       if (!ctx || !width || !height) return [];
       const imageData = ctx.getImageData(0, 0, width, height);
       const code = jsQR(imageData.data, width, height, { inversionAttempts: 'attemptBoth' });
-      if (!code) return [];
+      if (!code || typeof code.data !== 'string' || code.data.length === 0) return [];
       const cp = [code.location.topLeftCorner, code.location.topRightCorner, code.location.bottomRightCorner, code.location.bottomLeftCorner];
       const xs = cp.map((p) => p.x);
       const ys = cp.map((p) => p.y);
@@ -86,6 +92,59 @@ export async function createDecoder(): Promise<Decoder> {
           boundingBox: { x: minX, y: minY, width: maxX - minX, height: maxY - minY },
         },
       ];
+    },
+  };
+}
+
+// ZXing は重いので動的 import で別チャンクに切り出す。
+export async function createZxingDecoder(): Promise<Decoder> {
+  const mod = await import('@zxing/library');
+  const {
+    BinaryBitmap,
+    HybridBinarizer,
+    HTMLCanvasElementLuminanceSource,
+    MultiFormatReader,
+    BarcodeFormat,
+    DecodeHintType,
+  } = mod;
+
+  const reader = new MultiFormatReader();
+  const hints = new Map<unknown, unknown>();
+  hints.set(DecodeHintType.POSSIBLE_FORMATS, [BarcodeFormat.QR_CODE]);
+  hints.set(DecodeHintType.TRY_HARDER, true);
+  reader.setHints(hints as never);
+
+  return {
+    kind: 'zxing',
+    async detect(source) {
+      const { canvas, width, height } = toCanvas(source);
+      if (!width || !height) return [];
+      try {
+        const lum = new HTMLCanvasElementLuminanceSource(canvas);
+        const bitmap = new BinaryBitmap(new HybridBinarizer(lum));
+        const result = reader.decode(bitmap);
+        const text = result.getText();
+        if (!text) return [];
+        const points = result.getResultPoints();
+        const cornerPoints =
+          points && points.length > 0
+            ? points.map((p) => ({ x: p.getX(), y: p.getY() }))
+            : undefined;
+        let boundingBox: { x: number; y: number; width: number; height: number } | undefined;
+        if (cornerPoints && cornerPoints.length > 0) {
+          const xs = cornerPoints.map((p) => p.x);
+          const ys = cornerPoints.map((p) => p.y);
+          const minX = Math.min(...xs);
+          const minY = Math.min(...ys);
+          boundingBox = { x: minX, y: minY, width: Math.max(...xs) - minX, height: Math.max(...ys) - minY };
+        }
+        return [{ rawValue: text, format: 'qr_code', cornerPoints, boundingBox }];
+      } catch {
+        // NotFoundException 等は検出なし扱い
+        return [];
+      } finally {
+        reader.reset();
+      }
     },
   };
 }

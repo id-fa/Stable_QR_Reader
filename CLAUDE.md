@@ -29,6 +29,7 @@ GitHub Pages 用の公開先は `docs/webapp/`。デプロイ手順：
 npm run build
 cp dist/assets/index.js  docs/webapp/assets/index.js
 cp dist/assets/index.css docs/webapp/assets/index.css
+cp dist/assets/zxing.js  docs/webapp/assets/zxing.js
 ```
 
 - `docs/webapp/index.html` には OGP メタタグ・Google Analytics（gtag）・footer・
@@ -36,6 +37,10 @@ cp dist/assets/index.css docs/webapp/assets/index.css
   vite の出力は `assets/index.js` / `assets/index.css` の固定名（ハッシュなし、
   `vite.config.ts` の `entryFileNames`/`assetFileNames` で固定）なので、
   `assets/` 配下を上書きコピーするだけで反映できる。
+- `assets/zxing.js` は ZXing-js（フォールバック用 QR デコーダ）の動的 import チャンク。
+  プライマリが jsQR で読み取りに失敗したときだけランタイム取得されるが、
+  ファイル自体はデプロイ時に必ずコピーすること（`vite.config.ts` の `manualChunks` で
+  ファイル名を `zxing.js` に固定済み）。
 - `dist/index.html` を `docs/webapp/index.html` に上書きしないこと（OGP・GA が消える）。
 - 配下の `manifest.webmanifest` と `icons/` も基本触らない（変更が必要な場合のみ手動更新）。
 
@@ -45,11 +50,15 @@ cp dist/assets/index.css docs/webapp/assets/index.css
 src/
   main.ts      DOM 構築・イベント結線・履歴 UI 描画。ロジックは持たない。
   scanner.ts   Scanner クラス。getUserMedia / 能力判定 / フレームスキャン /
-               行動指示生成 / フォーカス自動試行 を担う。状態は外部に
-               onResults / onStatus コールバックで通知。
+               行動指示生成 / 光学系自動試行（フォーカス・ズーム）を担う。
+               状態は外部に onResults / onStatus / onRuntimeChange の
+               3 種類のコールバックで通知。
   decoder.ts   createDecoder() が BarcodeDetector を優先、未対応なら
-               jsQR にフォールバックする Decoder を返す。Decoder.kind で
-               判別可能（複数 QR 同時検出は 'native' のときのみ）。
+               jsQR にフォールバックする Decoder を返す。Decoder.kind は
+               'native' | 'jsqr' | 'zxing' の 3 種。複数 QR 同時検出は
+               'native' のときのみ。createJsqrDecoder() / createZxingDecoder()
+               で個別取得も可能。ZXing は @zxing/library の動的 import で
+               別チャンク（assets/zxing.js）に切り出されている。
   history.ts   重複排除・回数カウント・localStorage 永続化。
   styles.css   ダークテーマ。状態別の色（ok/warn/error/info）を CSS で表現。
 ```
@@ -59,15 +68,42 @@ src/
 ```
 Scanner.scanLoop (rAF)
   ├─ video → canvas に描画（反転処理は加えない）
-  ├─ decoder.detect(canvas) → DetectedCode[]
-  │   ├─ 検出あり → onResults(codes) → main.ts が drawOverlay + history.add + renderHistory
-  │   └─ 検出なし → failureFrames++
-  │                  ├─ onResults([]) で overlay をクリア
-  │                  ├─ 中央 120x120 の輝度サンプリングで状態判定
-  │                  ├─ onStatus で行動指示
-  │                  └─ 一定間隔で tryAdjustOptics（フォーカス試行）
-  └─ 次フレームへ
+  ├─ primary.detect(canvas) → DetectedCode[]
+  │   └─ 空なら secondaryDecoder?.detect(canvas) も試す（active 時のみ）
+  ├─ 検出あり → failureFrames=0 / onResults(codes) /
+  │             main.ts が drawOverlay + history.add + renderHistory
+  └─ 検出なし → failureFrames++
+                ├─ onResults([]) で overlay をクリア
+                ├─ failureFrames が閾値を超えたら secondary を起動
+                │   （native→jsqr / jsqr→ZXing。ZXing は動的 import）
+                ├─ 中央 120×120 を輝度＋鮮鋭度（stdDev / 勾配）でサンプリング
+                ├─ onStatus で行動指示（暗い／白飛び／距離変更／レンズ汚れ）
+                └─ 45 フレーム毎に tryAdjustOptics でフォーカス・ズームを試行
 ```
+
+### 検出失敗時の段階的フォールバック
+
+`Scanner.maybeActivateSecondaryDecoder()` が `failureFrames >= 60`（約 1 秒）で
+セカンダリデコーダを起動する：
+
+- プライマリが `native` の場合 → `createJsqrDecoder()` を即時生成
+- プライマリが `jsqr` の場合 → `createZxingDecoder()` を `await import` で読み込み
+  （`secondaryLoading` フラグで多重起動を防止）
+
+起動後はセカンダリがセッション終了まで保持され、毎フレーム「primary が空 →
+secondary」の二段検出になる。`detectFromFile` も native→jsqr→ZXing と段階的に試す。
+
+### tryAdjustOptics の試行内容
+
+`failureFrames` が 45 の倍数のたびに呼ばれ、`trialIndex` を進めながら以下を試す：
+
+- **フォーカス** — `continuous` モードがあれば最初に一回適用、その後は `manual` +
+  `focusDistance` の min〜max を 5 段階でスイープ。
+- **ズーム** — `caps.zoom` があれば、能力に応じて広角 (0.5x) / 標準 (1x) / 望遠 (2x)
+  を `trialIndex` 偶奇で巡回適用。`currentZoom` を更新して `onRuntimeChange` を発火。
+  これは **ハードウェアレベルのズーム**（`applyConstraints({ advanced: [{ zoom }] })`）で
+  あり、main.ts 側の CSS スケールによる「2倍ズーム」トグル（視覚のみ・検出には効かない）
+  とは独立。
 
 ### overlay canvas（検出位置のハイライト）
 
@@ -102,6 +138,40 @@ Scanner.scanLoop (rAF)
     固定枠で誘導すると却って合焦できない／読めない状態を招く。
   - `BarcodeDetector` は中央以外のコードも検出できるので、枠で限定すると強みを潰す。
   - 代わりに「検出されたコードを枠で示す」フィードバック方針（不変条件 7）を採る。
+- **センサ値で裏付けが取れない行動指示は出さない**
+  - 「もう少し近づけて」「遠ざけて」「手ブレを抑えて」「中央に来るように」といった
+    ヒントは、Scanner 側で距離・動き量・コード位置を測っていない以上ただの当てずっぽう。
+    かつて hints カルーセルで出していたが、根拠が無いため削除済み。
+  - 検出失敗時は「カメラからの距離を変えてみてください」のような中立的な誘導と、
+    輝度・鮮鋭度から判定できる事象（暗い／白飛び／レンズ汚れ）に限定する。
+- **CSS の `scale(2)` を「読み取り改善」のために使わない**
+  - main.ts の 2倍ズームトグルは `<video>` への CSS transform であり、
+    Scanner が読み込む canvas 解像度には影響しない（=検出には無効）。
+  - 検出に効かせたい場合は `applyConstraints({ advanced: [{ zoom }] })` で
+    ハードウェアズームを動かす。tryAdjustOptics の自動オシレーションがこの方針。
+
+## UI 表示テキスト（日本語／英語併記）
+
+画面に出る文字列はすべて日本語と英語を併記する。意図せず片方だけになっていたら直す。
+
+- **ステータス（`#status`）** — `ScannerStatus` の `message`/`hint` に加えて
+  `messageEn`/`hintEn` も埋める。`main.ts` の `showStatus` が英語を `<span class="en">` で
+  2 行目として描画する（CSS の `.status strong .en` / `.status small .en` でスタイル）。
+  英語訳を省略すると日本語だけになるので、新しい `onStatus` 呼び出しを追加するときは
+  必ず英語版も書く。
+- **ボタン・トグル・ヘッダ等の短いラベル** — `日本語 / English` のインライン併記
+  （例: `開始 / Start`、`削除 / Delete`、`コピー / Copy`、`コピー済 / Copied`）。
+  動的にテキストを差し替える箇所（`startBtn.textContent`、`copyBtn.textContent` 等）も
+  併記形式で書くこと。
+- **能力表示（`#capability`）** — `フォーカス / Focus: ...` のようにキー部分も併記。
+- **履歴のカウント** — `N回検出 / N× detected` の形式。
+- **`confirm` ダイアログ** — 改行区切りで日本語と英語を 1 つの文字列に入れる
+  （例: `'履歴をすべて削除しますか？\nClear all history?'`）。
+- **CSS 擬似要素** — `#history-list:empty::after` のような CSS 内のテキストも
+  `日本語 / English` 形式で書く。
+- **footer の商標表記** — `index.html` / `docs/webapp/index.html` の footer は
+  既に併記済み。触らない。
+- **HTML の `lang` 属性** — `lang="ja"` のままで OK（一次言語は日本語）。
 
 ## コーディング規約
 
