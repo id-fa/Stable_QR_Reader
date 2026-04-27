@@ -22,6 +22,10 @@ app.innerHTML = `
           <input type="checkbox" id="torch-toggle" disabled />
           ライト
         </label>
+        <label class="toggle">
+          <input type="checkbox" id="zoom-toggle" />
+          2倍ズーム
+        </label>
         <label class="file-btn">
           画像ファイルから読み取り
           <input type="file" id="file-input" accept="image/*" hidden />
@@ -48,6 +52,7 @@ const cameraSelect = document.getElementById('camera-select') as HTMLSelectEleme
 const startBtn = document.getElementById('start-btn') as HTMLButtonElement;
 const stopBtn = document.getElementById('stop-btn') as HTMLButtonElement;
 const torchToggle = document.getElementById('torch-toggle') as HTMLInputElement;
+const zoomToggle = document.getElementById('zoom-toggle') as HTMLInputElement;
 const fileInput = document.getElementById('file-input') as HTMLInputElement;
 const statusEl = document.getElementById('status') as HTMLDivElement;
 const capabilityEl = document.getElementById('capability') as HTMLDivElement;
@@ -170,12 +175,23 @@ function setRunningUI(running: boolean): void {
   startBtn.textContent = running ? '実行中' : '開始';
 }
 
+let zoomed = false;
+
+function applyVideoTransforms(): void {
+  const parts: string[] = [];
+  if (scanner.isMirrored()) parts.push('scaleX(-1)');
+  if (zoomed) parts.push('scale(2)');
+  const t = parts.join(' ') || 'none';
+  video.style.transform = t;
+  overlay.style.transform = t;
+}
+
 function syncOverlay(): void {
   if (video.videoWidth && video.videoHeight) {
     if (overlay.width !== video.videoWidth) overlay.width = video.videoWidth;
     if (overlay.height !== video.videoHeight) overlay.height = video.videoHeight;
   }
-  overlay.style.transform = scanner.isMirrored() ? 'scaleX(-1)' : 'none';
+  applyVideoTransforms();
 }
 
 function drawOverlay(codes: DetectedCode[]): void {
@@ -223,6 +239,7 @@ startBtn.addEventListener('click', async () => {
     await scanner.start(cameraSelect.value || undefined);
     await refreshCameraList(false);
     updateCapabilityDisplay();
+    applyVideoTransforms();
     setRunningUI(true);
   } catch {
     setRunningUI(false);
@@ -241,9 +258,15 @@ cameraSelect.addEventListener('change', async () => {
   try {
     await scanner.start(cameraSelect.value);
     updateCapabilityDisplay();
+    applyVideoTransforms();
   } catch {
     setRunningUI(false);
   }
+});
+
+zoomToggle.addEventListener('change', () => {
+  zoomed = zoomToggle.checked;
+  applyVideoTransforms();
 });
 
 torchToggle.addEventListener('change', async () => {

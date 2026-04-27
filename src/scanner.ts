@@ -96,7 +96,6 @@ export class Scanner {
     this.capabilities = (track.getCapabilities ? track.getCapabilities() : {}) as ExtendedCapabilities;
     const settings = track.getSettings();
     this.mirrored = settings.facingMode === 'user';
-    this.video.style.transform = this.mirrored ? 'scaleX(-1)' : 'none';
 
     this.failureFrames = 0;
     this.trialIndex = 0;
