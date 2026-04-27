@@ -21,6 +21,24 @@ npx tsc --noEmit   # 型チェックのみ
 `getUserMedia` は `localhost` でも特定環境で HTTPS 必須となるため、dev サーバは
 `@vitejs/plugin-basic-ssl` で常に HTTPS 化している。HTTP に戻さないこと。
 
+## デプロイ（docs/webapp）
+
+GitHub Pages 用の公開先は `docs/webapp/`。デプロイ手順：
+
+```bash
+npm run build
+cp dist/assets/index.js  docs/webapp/assets/index.js
+cp dist/assets/index.css docs/webapp/assets/index.css
+```
+
+- `docs/webapp/index.html` には OGP メタタグ・Google Analytics（gtag）・footer・
+  manifest リンクなどのカスタマイズが入っているので **触らない**。
+  vite の出力は `assets/index.js` / `assets/index.css` の固定名（ハッシュなし、
+  `vite.config.ts` の `entryFileNames`/`assetFileNames` で固定）なので、
+  `assets/` 配下を上書きコピーするだけで反映できる。
+- `dist/index.html` を `docs/webapp/index.html` に上書きしないこと（OGP・GA が消える）。
+- 配下の `manifest.webmanifest` と `icons/` も基本触らない（変更が必要な場合のみ手動更新）。
+
 ## アーキテクチャ
 
 ```

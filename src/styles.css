@@ -155,11 +155,25 @@ button:disabled {
   font-size: 22px;
   letter-spacing: 0.01em;
 }
+.status strong .en {
+  display: block;
+  font-weight: 500;
+  font-size: 16px;
+  letter-spacing: 0;
+  opacity: 0.8;
+  margin-top: 2px;
+}
 .status small {
   color: var(--text);
   opacity: 0.85;
   font-size: 17px;
   line-height: 1.5;
+}
+.status small .en {
+  display: block;
+  font-size: 14px;
+  opacity: 0.8;
+  margin-top: 2px;
 }
 .status-ok    { border-color: var(--ok); background: rgba(43, 182, 115, 0.10); }
 .status-ok    strong::before    { content: "✓ "; color: var(--ok); }
@@ -171,7 +185,9 @@ button:disabled {
 
 @media (max-width: 600px) {
   .status strong { font-size: 19px; }
+  .status strong .en { font-size: 14px; }
   .status small { font-size: 15px; }
+  .status small .en { font-size: 13px; }
 }
 
 .capability {
@@ -204,7 +220,7 @@ button:disabled {
 }
 
 #history-list:empty::after {
-  content: "履歴はまだありません。";
+  content: "履歴はまだありません。 / No history yet.";
   color: var(--text-dim);
   font-size: 13px;
   padding: 8px 4px;

@@ -15,31 +15,31 @@ app.innerHTML = `
         <canvas id="overlay"></canvas>
       </div>
       <div class="controls">
-        <select id="camera-select" aria-label="カメラ選択"></select>
-        <button id="start-btn" class="primary">開始</button>
-        <button id="stop-btn" disabled>停止</button>
+        <select id="camera-select" aria-label="カメラ選択 / Select camera"></select>
+        <button id="start-btn" class="primary">開始 / Start</button>
+        <button id="stop-btn" disabled>停止 / Stop</button>
         <label class="toggle">
           <input type="checkbox" id="torch-toggle" disabled />
-          ライト
+          ライト / Light
         </label>
         <label class="toggle">
           <input type="checkbox" id="zoom-toggle" />
-          2倍ズーム
+          2倍ズーム / 2× Zoom
         </label>
         <label class="file-btn">
-          画像ファイルから読み取り
+          画像ファイルから読み取り / Read from image file
           <input type="file" id="file-input" accept="image/*" hidden />
         </label>
       </div>
       <div id="status" class="status status-info">
-        <strong>「開始」を押してカメラを起動してください。</strong>
+        <strong>「開始」を押してカメラを起動してください。<span class="en">Press “Start” to launch the camera.</span></strong>
       </div>
       <div id="capability" class="capability"></div>
     </section>
     <section>
       <div class="history-header">
-        <h2>読み取り履歴</h2>
-        <button id="clear-history">履歴をクリア</button>
+        <h2>読み取り履歴 / Scan history</h2>
+        <button id="clear-history">履歴をクリア / Clear</button>
       </div>
       <ul id="history-list"></ul>
     </section>
@@ -64,9 +64,15 @@ const history = new History();
 
 function showStatus(s: ScannerStatus): void {
   statusEl.className = `status status-${s.level}`;
-  const safeMsg = escapeHtml(s.message);
-  const safeHint = s.hint ? `<small>${escapeHtml(s.hint)}</small>` : '';
-  statusEl.innerHTML = `<strong>${safeMsg}</strong>${safeHint}`;
+  const msgEn = s.messageEn ? `<span class="en">${escapeHtml(s.messageEn)}</span>` : '';
+  const strong = `<strong>${escapeHtml(s.message)}${msgEn}</strong>`;
+  let small = '';
+  if (s.hint || s.hintEn) {
+    const hintJa = s.hint ? escapeHtml(s.hint) : '';
+    const hintEn = s.hintEn ? `<span class="en">${escapeHtml(s.hintEn)}</span>` : '';
+    small = `<small>${hintJa}${hintEn}</small>`;
+  }
+  statusEl.innerHTML = `${strong}${small}`;
 }
 
 function escapeHtml(s: string): string {
@@ -100,31 +106,31 @@ function renderHistory(): void {
     const meta = document.createElement('div');
     meta.className = 'meta';
     const time = document.createElement('span');
-    time.textContent = `${new Date(it.lastSeen).toLocaleString()}${it.count > 1 ? ` ・ ${it.count}回検出` : ''}`;
+    time.textContent = `${new Date(it.lastSeen).toLocaleString()}${it.count > 1 ? ` ・ ${it.count}回検出 / ${it.count}× detected` : ''}`;
     meta.appendChild(time);
 
     const actions = document.createElement('div');
     actions.className = 'item-actions';
 
     const copyBtn = document.createElement('button');
-    copyBtn.textContent = 'コピー';
+    copyBtn.textContent = 'コピー / Copy';
     copyBtn.addEventListener('click', () => {
       navigator.clipboard.writeText(it.text).then(() => {
-        copyBtn.textContent = 'コピー済';
-        setTimeout(() => (copyBtn.textContent = 'コピー'), 1200);
+        copyBtn.textContent = 'コピー済 / Copied';
+        setTimeout(() => (copyBtn.textContent = 'コピー / Copy'), 1200);
       });
     });
     actions.appendChild(copyBtn);
 
     if (isUrl(it.text)) {
       const openBtn = document.createElement('button');
-      openBtn.textContent = '開く';
+      openBtn.textContent = '開く / Open';
       openBtn.addEventListener('click', () => window.open(it.text, '_blank', 'noopener'));
       actions.appendChild(openBtn);
     }
 
     const delBtn = document.createElement('button');
-    delBtn.textContent = '削除';
+    delBtn.textContent = '削除 / Delete';
     delBtn.addEventListener('click', () => {
       history.remove(it.text);
       renderHistory();
@@ -159,12 +165,12 @@ async function refreshCameraList(promptIfNeeded = false): Promise<void> {
 function updateCapabilityDisplay(): void {
   const caps = scanner.getCapabilityFlags();
   const items: string[] = [];
-  if (caps.focusModes.length) items.push(`フォーカス: ${caps.focusModes.join('/')}`);
-  else items.push('フォーカス: 制御不可（パンフォーカス想定）');
-  if (caps.exposureModes.length) items.push(`露出: ${caps.exposureModes.join('/')}`);
-  if (caps.zoom) items.push(`ズーム: ×${caps.zoom.min}〜×${caps.zoom.max}`);
-  if (caps.torch) items.push('ライト: 利用可');
-  if (caps.facingMode) items.push(`向き: ${caps.facingMode}`);
+  if (caps.focusModes.length) items.push(`フォーカス / Focus: ${caps.focusModes.join('/')}`);
+  else items.push('フォーカス / Focus: 制御不可（パンフォーカス想定） / not controllable (assumes pan-focus)');
+  if (caps.exposureModes.length) items.push(`露出 / Exposure: ${caps.exposureModes.join('/')}`);
+  if (caps.zoom) items.push(`ズーム / Zoom: ×${caps.zoom.min}〜×${caps.zoom.max}`);
+  if (caps.torch) items.push('ライト / Light: 利用可 / available');
+  if (caps.facingMode) items.push(`向き / Facing: ${caps.facingMode}`);
   capabilityEl.textContent = items.join(' ・ ');
   torchToggle.disabled = !caps.torch;
 }
@@ -172,7 +178,7 @@ function updateCapabilityDisplay(): void {
 function setRunningUI(running: boolean): void {
   startBtn.disabled = running;
   stopBtn.disabled = !running;
-  startBtn.textContent = running ? '実行中' : '開始';
+  startBtn.textContent = running ? '実行中 / Running' : '開始 / Start';
 }
 
 let zoomed = false;
@@ -250,7 +256,7 @@ stopBtn.addEventListener('click', () => {
   scanner.stop();
   setRunningUI(false);
   drawOverlay([]);
-  showStatus({ level: 'info', message: '停止しました。' });
+  showStatus({ level: 'info', message: '停止しました。', messageEn: 'Stopped.' });
 });
 
 cameraSelect.addEventListener('change', async () => {
@@ -276,7 +282,9 @@ torchToggle.addEventListener('change', async () => {
     showStatus({
       level: 'warn',
       message: 'ライトを制御できませんでした。',
+      messageEn: 'Could not control the light.',
       hint: 'このカメラはライト制御に対応していません。',
+      hintEn: 'This camera does not support light control.',
     });
   }
 });
@@ -290,7 +298,9 @@ fileInput.addEventListener('change', async () => {
       showStatus({
         level: 'warn',
         message: 'この画像からQRコードを検出できませんでした。',
+        messageEn: 'No QR code could be detected in this image.',
         hint: '画像が不鮮明、またはQRコード以外のコードの可能性があります。',
+        hintEn: 'The image may be unclear or contain a non-QR code.',
       });
     } else {
       for (const c of codes) history.add(c.rawValue);
@@ -298,6 +308,7 @@ fileInput.addEventListener('change', async () => {
       showStatus({
         level: 'ok',
         message: `画像から ${codes.length} 件のQRコードを検出しました。履歴をご確認ください。`,
+        messageEn: `Detected ${codes.length} QR code(s) from the image. See history.`,
       });
     }
   } catch (e) {
@@ -305,6 +316,7 @@ fileInput.addEventListener('change', async () => {
     showStatus({
       level: 'error',
       message: '画像の読み取りに失敗しました。',
+      messageEn: 'Failed to read the image.',
       hint: err?.message,
     });
   } finally {
@@ -313,7 +325,7 @@ fileInput.addEventListener('change', async () => {
 });
 
 clearHistoryBtn.addEventListener('click', () => {
-  if (confirm('履歴をすべて削除しますか？')) {
+  if (confirm('履歴をすべて削除しますか？\nClear all history?')) {
     history.clear();
     renderHistory();
   }

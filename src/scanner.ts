@@ -5,7 +5,9 @@ export type StatusLevel = 'info' | 'ok' | 'warn' | 'error';
 export interface ScannerStatus {
   level: StatusLevel;
   message: string;
+  messageEn?: string;
   hint?: string;
+  hintEn?: string;
 }
 
 export interface CameraInfo {
@@ -64,7 +66,7 @@ export class Scanner {
       .filter((d) => d.kind === 'videoinput')
       .map((d, i) => ({
         deviceId: d.deviceId,
-        label: d.label || `カメラ ${i + 1}`,
+        label: d.label || `カメラ ${i + 1} / Camera ${i + 1}`,
       }));
   }
 
@@ -72,7 +74,11 @@ export class Scanner {
     this.stop();
     if (!this.decoder) this.decoder = await createDecoder();
 
-    this.onStatus({ level: 'info', message: 'カメラを起動しています...' });
+    this.onStatus({
+      level: 'info',
+      message: 'カメラを起動しています...',
+      messageEn: 'Starting camera…',
+    });
     const constraints: MediaStreamConstraints = {
       audio: false,
       video: deviceId
@@ -102,6 +108,7 @@ export class Scanner {
     this.onStatus({
       level: 'ok',
       message: 'カメラ起動完了。QRコードをカメラにかざしてください。',
+      messageEn: 'Camera ready. Hold a QR code up to the camera.',
     });
     this.scanLoop();
   }
@@ -164,24 +171,31 @@ export class Scanner {
       this.onStatus({
         level: 'error',
         message: 'カメラへのアクセスが拒否されています。',
+        messageEn: 'Camera access has been denied.',
         hint: 'アドレスバー左の鍵アイコン → サイトの設定 → カメラを「許可」にしてから「再試行」を押してください。',
+        hintEn: 'Click the lock icon in the address bar → Site settings → set Camera to “Allow”, then press Start again.',
       });
     } else if (name === 'NotFoundError' || name === 'OverconstrainedError') {
       this.onStatus({
         level: 'error',
         message: '指定したカメラが見つかりません。',
+        messageEn: 'The selected camera was not found.',
         hint: '別のカメラを選択するか、デバイスを接続し直してください。',
+        hintEn: 'Choose another camera or reconnect the device.',
       });
     } else if (name === 'NotReadableError') {
       this.onStatus({
         level: 'error',
         message: 'カメラを他のアプリが使用中の可能性があります。',
+        messageEn: 'The camera may be in use by another app.',
         hint: 'カメラを使用している他のアプリ（Teams, Zoom等）を終了してから再試行してください。',
+        hintEn: 'Close other apps using the camera (Teams, Zoom, etc.) and try again.',
       });
     } else {
       this.onStatus({
         level: 'error',
         message: 'カメラの起動に失敗しました。',
+        messageEn: 'Failed to start the camera.',
         hint: err?.message,
       });
     }
@@ -209,6 +223,10 @@ export class Scanner {
                 codes.length === 1
                   ? 'QRコードを検出しました。'
                   : `${codes.length}件のQRコードを検出中。`,
+              messageEn:
+                codes.length === 1
+                  ? 'QR code detected.'
+                  : `Detecting ${codes.length} QR codes.`,
             });
           } else {
             this.failureFrames++;
@@ -239,26 +257,32 @@ export class Scanner {
       this.onStatus({
         level: 'warn',
         message: '画面が暗いようです。',
+        messageEn: 'The image looks too dark.',
         hint: '部屋を明るくするか、対象にライトを当ててください。',
+        hintEn: 'Brighten the room or shine a light on the target.',
       });
     } else if (brightness > 235) {
       this.onStatus({
         level: 'warn',
         message: '画面が明るすぎて白飛びしています。',
+        messageEn: 'The image is overexposed.',
         hint: '光源の反射を避けるよう角度を変えてください。',
+        hintEn: 'Change the angle to avoid light reflections.',
       });
     } else {
-      const hints = [
-        'コードを少し近づけてください。',
-        'コードを少し遠ざけてください。',
-        'コードがフレーム中央に来るようにしてください。',
-        '手ブレを抑え、しっかりかざしてください。',
+      const hints: Array<{ ja: string; en: string }> = [
+        { ja: 'コードを少し近づけてください。', en: 'Move the code a little closer.' },
+        { ja: 'コードを少し遠ざけてください。', en: 'Move the code a little farther.' },
+        { ja: 'コードがフレーム中央に来るようにしてください。', en: 'Center the code in the frame.' },
+        { ja: '手ブレを抑え、しっかりかざしてください。', en: 'Hold steady to reduce shake.' },
       ];
-      const hint = hints[Math.floor(this.failureFrames / 30) % hints.length];
+      const h = hints[Math.floor(this.failureFrames / 30) % hints.length];
       this.onStatus({
         level: 'warn',
         message: 'QRコードを検出できません。',
-        hint,
+        messageEn: 'No QR code detected.',
+        hint: h.ja,
+        hintEn: h.en,
       });
     }
 
