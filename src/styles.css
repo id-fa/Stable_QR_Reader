@@ -1,0 +1,240 @@
+:root {
+  --bg: #0f1115;
+  --panel: #181b22;
+  --panel-2: #20242d;
+  --text: #e6e9ef;
+  --text-dim: #9aa3b2;
+  --accent: #4f8cff;
+  --accent-2: #6ea8ff;
+  --ok: #2bb673;
+  --warn: #f0a020;
+  --error: #e25555;
+  --border: #2a2f3a;
+  --radius: 10px;
+  font-family: system-ui, -apple-system, "Segoe UI", "Yu Gothic UI", sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+}
+
+#app {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 16px;
+}
+
+header h1 {
+  font-size: 20px;
+  margin: 0 0 16px;
+  letter-spacing: 0.02em;
+}
+
+main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  gap: 16px;
+}
+
+@media (max-width: 900px) {
+  main { grid-template-columns: 1fr; }
+}
+
+section {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px;
+}
+
+.viewer {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.video-wrap {
+  position: relative;
+  background: #000;
+  border-radius: var(--radius);
+  overflow: hidden;
+  aspect-ratio: 16 / 9;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+#overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.controls > * { min-height: 36px; }
+
+select, button, .file-btn {
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background-color 0.12s, border-color 0.12s;
+}
+
+select { min-width: 180px; }
+
+button:hover, .file-btn:hover { background: #2a2f3a; }
+
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+button.primary:hover { background: var(--accent-2); }
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.file-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+.status {
+  border-radius: 12px;
+  padding: 18px 22px;
+  border: 2px solid var(--border);
+  background: var(--panel-2);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  line-height: 1.4;
+}
+.status strong {
+  font-weight: 700;
+  font-size: 22px;
+  letter-spacing: 0.01em;
+}
+.status small {
+  color: var(--text);
+  opacity: 0.85;
+  font-size: 17px;
+  line-height: 1.5;
+}
+.status-ok    { border-color: var(--ok); background: rgba(43, 182, 115, 0.10); }
+.status-ok    strong::before    { content: "✓ "; color: var(--ok); }
+.status-warn  { border-color: var(--warn); background: rgba(240, 160, 32, 0.12); }
+.status-warn  strong::before    { content: "⚠ "; color: var(--warn); }
+.status-error { border-color: var(--error); background: rgba(226, 85, 85, 0.12); }
+.status-error strong::before    { content: "✕ "; color: var(--error); }
+.status-info  strong::before    { content: "ℹ "; color: var(--accent-2); }
+
+@media (max-width: 600px) {
+  .status strong { font-size: 19px; }
+  .status small { font-size: 15px; }
+}
+
+.capability {
+  font-size: 12px;
+  color: var(--text-dim);
+  padding: 4px 2px;
+}
+
+.history-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.history-header h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+#history-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+#history-list:empty::after {
+  content: "履歴はまだありません。";
+  color: var(--text-dim);
+  font-size: 13px;
+  padding: 8px 4px;
+  display: block;
+}
+
+#history-list li {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  word-break: break-all;
+}
+
+#history-list a {
+  color: var(--accent-2);
+  text-decoration: none;
+}
+#history-list a:hover { text-decoration: underline; }
+
+#history-list .meta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+#history-list .item-actions {
+  display: flex;
+  gap: 6px;
+}
+
+#history-list .item-actions button {
+  font-size: 11px;
+  padding: 3px 8px;
+  min-height: auto;
+}
