@@ -126,6 +126,13 @@ button:disabled {
   cursor: not-allowed;
 }
 
+button.confirm {
+  background: rgba(226, 85, 85, 0.18);
+  border-color: var(--error);
+  color: var(--error);
+}
+button.confirm:hover { background: rgba(226, 85, 85, 0.28); }
+
 .file-btn {
   display: inline-flex;
   align-items: center;

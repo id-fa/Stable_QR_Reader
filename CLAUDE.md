@@ -59,6 +59,8 @@ src/
                'native' のときのみ。createJsqrDecoder() / createZxingDecoder()
                で個別取得も可能。ZXing は @zxing/library の動的 import で
                別チャンク（assets/zxing.js）に切り出されている。
+               3 経路すべて QR 専用（native: formats=['qr_code'] / jsQR は QR 専用 lib /
+               ZXing は QRCodeReader 直接利用）。1 次元バーコードは検出しない方針。
   history.ts   重複排除・回数カウント・localStorage 永続化。
   styles.css   ダークテーマ。状態別の色（ok/warn/error/info）を CSS で表現。
 ```
@@ -76,6 +78,8 @@ Scanner.scanLoop (rAF)
                 ├─ onResults([]) で overlay をクリア
                 ├─ failureFrames が閾値を超えたら secondary を起動
                 │   （native→jsqr / jsqr→ZXing。ZXing は動的 import）
+                ├─ 鏡像試行ウィンドウ内なら左右反転 canvas でも primary→secondary を試す
+                │   （成功時は cornerPoints を unflip して onResults へ）
                 ├─ 中央 120×120 を輝度＋鮮鋭度（stdDev / 勾配）でサンプリング
                 ├─ onStatus で行動指示（暗い／白飛び／距離変更／レンズ汚れ）
                 └─ 45 フレーム毎に tryAdjustOptics でフォーカス・ズームを試行
@@ -92,6 +96,27 @@ Scanner.scanLoop (rAF)
 
 起動後はセカンダリがセッション終了まで保持され、毎フレーム「primary が空 →
 secondary」の二段検出になる。`detectFromFile` も native→jsqr→ZXing と段階的に試す。
+
+### 鏡像読み取りフォールバック
+
+`facingMode` だけでは判定できない「カメラが映像を左右反転して出力している」ケース
+（仮想カメラ・OBS 等）に対応するため、検出失敗が続いたときに左右反転した canvas でも
+試行する。
+
+- 開始閾値: `failureFrames >= MIRROR_FALLBACK_THRESHOLD`（30 フレーム ≒ 0.5 秒）
+- 試行ウィンドウ: `MIRROR_TRIAL_DURATION`（90 フレーム ≒ 1.5 秒）
+- 周期: `MIRROR_TRIAL_PERIOD`（180 フレーム ≒ 3 秒）— 試行 ON / 休止 OFF を交互に繰り返す。
+  これにより「試行中」状態が無期限に固着するのを防ぎつつ、後から QR をかざしても拾える。
+- 反転 canvas 用に `Scanner.flipCanvas` を 1 つ持ち回し、`buildFlippedCanvas` で再利用する。
+- 反転検出で成功したら `unflipCodesHorizontally` で cornerPoints / boundingBox の x 座標を
+  元の向きに戻してから `onResults` に渡す（overlay 描画の coords を狂わせない）。
+- 状態は `mirrorTrialActive` フラグで管理し、ON/OFF が変わるたびに `onRuntimeChange` を
+  発火する。`isMirrorTrialActive()` を main.ts から参照して以下に反映：
+  - 能力欄 (`#capability`) に「左右反転で試行中 / Trying mirrored read」を表示
+  - `applyVideoTransforms` で `isMirrored() XOR isMirrorTrialActive()` を `scaleX(-1)` の
+    判定に用い、デコーダが見ている向きと画面表示を一致させる
+- `detectFromFile` も最終フォールバックとして反転試行を実装（native→jsqr→ZXing が全て
+  失敗したあとに、反転画像で同 3 段を試す）。
 
 ### tryAdjustOptics の試行内容
 
@@ -112,6 +137,10 @@ secondary」の二段検出になる。`detectFromFile` も native→jsqr→ZXin
 - overlay の内部解像度は `videoWidth × videoHeight` に同期（`loadedmetadata` と `syncOverlay()` で）。
 - 内蔵カメラ等で video が `scaleX(-1)` で鏡像表示される場合、overlay にも同じ transform を当てて
   座標変換を不要にしている（`Scanner.isMirrored()` を main.ts から参照）。
+- 鏡像読み取り試行中は `applyVideoTransforms` が `isMirrored() XOR isMirrorTrialActive()`
+  で判定するため、video / overlay とも追加で反転（または既存の反転を打ち消す）。
+  Scanner 側で cornerPoints は元の向きに戻してから渡しているので、overlay の描画 coords は
+  常に raw canvas 座標系で OK。
 - 描画は main.ts の `drawOverlay(codes)` が担当。Scanner は描画ロジックを持たない。
 
 ## 設計指針からの不変条件
@@ -149,6 +178,12 @@ secondary」の二段検出になる。`detectFromFile` も native→jsqr→ZXin
     Scanner が読み込む canvas 解像度には影響しない（=検出には無効）。
   - 検出に効かせたい場合は `applyConstraints({ advanced: [{ zoom }] })` で
     ハードウェアズームを動かす。tryAdjustOptics の自動オシレーションがこの方針。
+- **1 次元バーコードは検出させない（現時点）**
+  - ZXing で `MultiFormatReader` + `POSSIBLE_FORMATS` ヒントだけだと CODE_128 等が
+    すり抜けて返ってくることがあるため、`QRCodeReader` を直接使う形に固定している。
+  - 将来バーコード対応を加える際は `MultiFormatReader` に戻し、許可フォーマットを
+    `POSSIBLE_FORMATS` で明示する。`DetectedCode.format` も `'qr_code'` 以外を扱える
+    ようにする必要がある（現状 ZXing 経路は format を `'qr_code'` 固定で返す）。
 
 ## UI 表示テキスト（日本語／英語併記）
 
@@ -165,7 +200,14 @@ secondary」の二段検出になる。`detectFromFile` も native→jsqr→ZXin
   併記形式で書くこと。
 - **能力表示（`#capability`）** — `フォーカス / Focus: ...` のようにキー部分も併記。
 - **履歴のカウント** — `N回検出 / N× detected` の形式。
-- **`confirm` ダイアログ** — 改行区切りで日本語と英語を 1 つの文字列に入れる
+- **`confirm` ダイアログは使わない** — `window.confirm()` のような同期ブロッキング
+  ダイアログはスキャン中の `requestAnimationFrame` ループや video 再生を中断させ、
+  ダイアログ閉鎖後にスクリーンが追従しなくなる現象を引き起こす。代わりに
+  「履歴をクリア」ボタンのような 2 段階クリック方式を使う：1 回目で `.confirm` クラスを
+  付与してラベルを「もう一度押して確定 / Click again to confirm」に切り替え、3 秒以内に
+  もう一度押されたら実行、タイムアウトで元に戻す。新しい確認 UI を追加する際も
+  `confirm`/`alert`/`prompt` を避け、非ブロッキングなパターン（インライン確定 or
+  カスタムモーダル）で実装すること。併記が必要な場合は改行区切りで 1 文字列に入れる
   （例: `'履歴をすべて削除しますか？\nClear all history?'`）。
 - **CSS 擬似要素** — `#history-list:empty::after` のような CSS 内のテキストも
   `日本語 / English` 形式で書く。

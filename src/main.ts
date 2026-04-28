@@ -363,11 +363,33 @@ fileInput.addEventListener('change', async () => {
   }
 });
 
+// confirm() のような同期ブロッキングダイアログはスキャン中の rAF / video 再生を
+// 中断させ、ダイアログ閉鎖後にスクリーンが追従しなくなる現象が起きるため、
+// 2 段階クリック方式で確定する（1 回目で確認モード、3 秒以内の 2 回目で実行）。
+let clearPending = false;
+let clearPendingTimer: number | null = null;
+
+function resetClearHistoryButton(): void {
+  clearPending = false;
+  if (clearPendingTimer !== null) {
+    window.clearTimeout(clearPendingTimer);
+    clearPendingTimer = null;
+  }
+  clearHistoryBtn.textContent = '履歴をクリア / Clear';
+  clearHistoryBtn.classList.remove('confirm');
+}
+
 clearHistoryBtn.addEventListener('click', () => {
-  if (confirm('履歴をすべて削除しますか？\nClear all history?')) {
+  if (clearPending) {
     history.clear();
     renderHistory();
+    resetClearHistoryButton();
+    return;
   }
+  clearPending = true;
+  clearHistoryBtn.textContent = 'もう一度押して確定 / Click again to confirm';
+  clearHistoryBtn.classList.add('confirm');
+  clearPendingTimer = window.setTimeout(resetClearHistoryButton, 3000);
 });
 
 navigator.mediaDevices?.addEventListener?.('devicechange', () => {
