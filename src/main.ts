@@ -190,6 +190,9 @@ function updateCapabilityDisplay(): void {
       : '';
     items.push(`検出方式 / Decoder: ${primaryLabel}${secondaryLabel}`);
   }
+  if (rt.mirrorTrial) {
+    items.push('左右反転で試行中 / Trying mirrored read');
+  }
   if (caps.focusModes.length) items.push(`フォーカス / Focus: ${caps.focusModes.join('/')}`);
   else items.push('フォーカス / Focus: 制御不可（パンフォーカス想定） / not controllable (assumes pan-focus)');
   if (caps.focusDistance) {

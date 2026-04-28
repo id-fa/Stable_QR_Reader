@@ -57,6 +57,7 @@ export class Scanner {
   private capabilities: ExtendedCapabilities | null = null;
   private trialIndex = 0;
   private lowSharpnessFrames = 0;
+  private mirrorTrialActive = false;
 
   onResults: (codes: DetectedCode[]) => void = () => {};
   onStatus: (status: ScannerStatus) => void = () => {};
@@ -132,6 +133,7 @@ export class Scanner {
     this.secondaryDecoder = null;
     this.secondaryLoading = false;
     this.currentZoom = null;
+    this.mirrorTrialActive = false;
     this.onStatus({
       level: 'ok',
       message: 'カメラ起動完了。QRコードをカメラにかざしてください。',
@@ -162,11 +164,13 @@ export class Scanner {
     primary: Decoder['kind'] | null;
     secondaryActive: boolean;
     currentZoom: number | null;
+    mirrorTrial: boolean;
   } {
     return {
       primary: this.decoder?.kind ?? null,
       secondaryActive: this.secondaryDecoder !== null,
       currentZoom: this.currentZoom,
+      mirrorTrial: this.mirrorTrialActive,
     };
   }
 
@@ -292,6 +296,10 @@ export class Scanner {
           // user 判定されない仮想カメラ等）では正しい向きでも未検出となるため、左右反転
           // した canvas でも検出を試みる。検出できた場合は座標を元の向きに戻して返す。
           if (codes.length === 0 && this.failureFrames >= MIRROR_FALLBACK_THRESHOLD) {
+            if (!this.mirrorTrialActive) {
+              this.mirrorTrialActive = true;
+              this.onRuntimeChange();
+            }
             const flipped = this.buildFlippedCanvas(w, h);
             if (flipped) {
               let flippedCodes = await this.decoder.detect(flipped);
@@ -306,6 +314,10 @@ export class Scanner {
           if (codes.length > 0) {
             this.failureFrames = 0;
             this.lowSharpnessFrames = 0;
+            if (this.mirrorTrialActive) {
+              this.mirrorTrialActive = false;
+              this.onRuntimeChange();
+            }
             this.onResults(codes);
             this.onStatus({
               level: 'ok',
