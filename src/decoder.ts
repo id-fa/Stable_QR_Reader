@@ -97,22 +97,22 @@ export function createJsqrDecoder(): Decoder {
 }
 
 // ZXing は重いので動的 import で別チャンクに切り出す。
+// QR 以外（1次元バーコード等）を読み取らないよう、MultiFormatReader ではなく
+// QRCodeReader を直接使う。将来的にバーコード対応を加える際は MultiFormatReader に戻し、
+// POSSIBLE_FORMATS で許可するフォーマットを明示する方針。
 export async function createZxingDecoder(): Promise<Decoder> {
   const mod = await import('@zxing/library');
   const {
     BinaryBitmap,
     HybridBinarizer,
     HTMLCanvasElementLuminanceSource,
-    MultiFormatReader,
-    BarcodeFormat,
+    QRCodeReader,
     DecodeHintType,
   } = mod;
 
-  const reader = new MultiFormatReader();
+  const reader = new QRCodeReader();
   const hints = new Map<unknown, unknown>();
-  hints.set(DecodeHintType.POSSIBLE_FORMATS, [BarcodeFormat.QR_CODE]);
   hints.set(DecodeHintType.TRY_HARDER, true);
-  reader.setHints(hints as never);
 
   return {
     kind: 'zxing',
@@ -122,7 +122,7 @@ export async function createZxingDecoder(): Promise<Decoder> {
       try {
         const lum = new HTMLCanvasElementLuminanceSource(canvas);
         const bitmap = new BinaryBitmap(new HybridBinarizer(lum));
-        const result = reader.decode(bitmap);
+        const result = reader.decode(bitmap, hints as never);
         const text = result.getText();
         if (!text) return [];
         const points = result.getResultPoints();
