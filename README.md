@@ -3,6 +3,13 @@
 Chrome ブラウザ上で動作する、安定して読み取れることを重視した QR コードリーダーです。
 内蔵カメラの能力差を吸収しつつ、ユーザーに「いま何をすべきか」を明確に表示します。
 
+## DEMO
+
+👉 **[https://id-fa.github.io/Stable_QR_Reader/webapp/](https://id-fa.github.io/Stable_QR_Reader/webapp/)**
+
+GitHub Pages で公開しています（`docs/webapp/` 配下）。Chrome で開いてカメラ許可を出すと
+そのままお試しいただけます。
+
 ## 特長
 
 - **複数 QR の同時検出**（`BarcodeDetector` 利用時）— 勝手に処理を完了しない
