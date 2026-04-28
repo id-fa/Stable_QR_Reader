@@ -7,6 +7,7 @@ import {
 } from './decoder';
 
 const SECONDARY_DECODER_THRESHOLD = 60;
+const MIRROR_FALLBACK_THRESHOLD = 30;
 
 export type StatusLevel = 'info' | 'ok' | 'warn' | 'error';
 
@@ -44,6 +45,7 @@ interface ExtendedCapabilities extends MediaTrackCapabilities {
 export class Scanner {
   private readonly video: HTMLVideoElement;
   private readonly canvas: HTMLCanvasElement;
+  private readonly flipCanvas: HTMLCanvasElement;
   private stream: MediaStream | null = null;
   private decoder: Decoder | null = null;
   private secondaryDecoder: Decoder | null = null;
@@ -63,6 +65,7 @@ export class Scanner {
   constructor(video: HTMLVideoElement) {
     this.video = video;
     this.canvas = document.createElement('canvas');
+    this.flipCanvas = document.createElement('canvas');
   }
 
   static async listCameras(promptIfNeeded = true): Promise<CameraInfo[]> {
@@ -204,11 +207,27 @@ export class Scanner {
         codes = await this.secondaryDecoder.detect(bitmap);
         if (codes.length > 0) return codes;
       }
+      let zxing: Decoder | null = null;
       try {
-        const zxing = await createZxingDecoder();
+        zxing = await createZxingDecoder();
         codes = await zxing.detect(bitmap);
+        if (codes.length > 0) return codes;
       } catch {
         // ZXing 読み込み失敗は諦める
+      }
+      // 鏡像フォールバック: 反転して保存された画像や鏡越し撮影にも対応する
+      const flipped = flipImageHorizontally(bitmap);
+      if (flipped) {
+        let flippedCodes = await this.decoder.detect(flipped);
+        if (flippedCodes.length === 0 && this.secondaryDecoder) {
+          flippedCodes = await this.secondaryDecoder.detect(flipped);
+        }
+        if (flippedCodes.length === 0 && zxing) {
+          flippedCodes = await zxing.detect(flipped);
+        }
+        if (flippedCodes.length > 0) {
+          return unflipCodesHorizontally(flippedCodes, flipped.width);
+        }
       }
       return codes;
     } finally {
@@ -269,6 +288,21 @@ export class Scanner {
           if (codes.length === 0 && this.secondaryDecoder) {
             codes = await this.secondaryDecoder.detect(this.canvas);
           }
+          // 鏡像読み取りフォールバック: facingMode が信頼できない環境（ミラー出力なのに
+          // user 判定されない仮想カメラ等）では正しい向きでも未検出となるため、左右反転
+          // した canvas でも検出を試みる。検出できた場合は座標を元の向きに戻して返す。
+          if (codes.length === 0 && this.failureFrames >= MIRROR_FALLBACK_THRESHOLD) {
+            const flipped = this.buildFlippedCanvas(w, h);
+            if (flipped) {
+              let flippedCodes = await this.decoder.detect(flipped);
+              if (flippedCodes.length === 0 && this.secondaryDecoder) {
+                flippedCodes = await this.secondaryDecoder.detect(flipped);
+              }
+              if (flippedCodes.length > 0) {
+                codes = unflipCodesHorizontally(flippedCodes, w);
+              }
+            }
+          }
           if (codes.length > 0) {
             this.failureFrames = 0;
             this.lowSharpnessFrames = 0;
@@ -296,6 +330,17 @@ export class Scanner {
 
     this.rafId = requestAnimationFrame(this.scanLoop);
   };
+
+  private buildFlippedCanvas(w: number, h: number): HTMLCanvasElement | null {
+    if (this.flipCanvas.width !== w) this.flipCanvas.width = w;
+    if (this.flipCanvas.height !== h) this.flipCanvas.height = h;
+    const ctx = this.flipCanvas.getContext('2d', { willReadFrequently: true });
+    if (!ctx) return null;
+    ctx.setTransform(-1, 0, 0, 1, w, 0);
+    ctx.drawImage(this.canvas, 0, 0, w, h);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    return this.flipCanvas;
+  }
 
   private maybeActivateSecondaryDecoder(): void {
     if (this.secondaryDecoder || this.secondaryLoading) return;
@@ -447,6 +492,36 @@ export class Scanner {
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
+}
+
+function flipImageHorizontally(src: ImageBitmap): HTMLCanvasElement | null {
+  const w = src.width;
+  const h = src.height;
+  if (!w || !h) return null;
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  if (!ctx) return null;
+  ctx.setTransform(-1, 0, 0, 1, w, 0);
+  ctx.drawImage(src, 0, 0, w, h);
+  return canvas;
+}
+
+// 左右反転 canvas で検出した DetectedCode の x 座標を元の向きに戻す。
+function unflipCodesHorizontally(codes: DetectedCode[], width: number): DetectedCode[] {
+  return codes.map((c) => ({
+    ...c,
+    cornerPoints: c.cornerPoints?.map((p) => ({ x: width - p.x, y: p.y })),
+    boundingBox: c.boundingBox
+      ? {
+          x: width - c.boundingBox.x - c.boundingBox.width,
+          y: c.boundingBox.y,
+          width: c.boundingBox.width,
+          height: c.boundingBox.height,
+        }
+      : undefined,
+  }));
 }
 
 function averageBrightness(data: Uint8ClampedArray): number {
