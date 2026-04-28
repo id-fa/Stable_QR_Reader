@@ -8,6 +8,8 @@ import {
 
 const SECONDARY_DECODER_THRESHOLD = 60;
 const MIRROR_FALLBACK_THRESHOLD = 30;
+const MIRROR_TRIAL_DURATION = 90;
+const MIRROR_TRIAL_PERIOD = 180;
 
 export type StatusLevel = 'info' | 'ok' | 'warn' | 'error';
 
@@ -160,6 +162,10 @@ export class Scanner {
     return this.mirrored;
   }
 
+  isMirrorTrialActive(): boolean {
+    return this.mirrorTrialActive;
+  }
+
   getRuntimeInfo(): {
     primary: Decoder['kind'] | null;
     secondaryActive: boolean;
@@ -295,7 +301,14 @@ export class Scanner {
           // 鏡像読み取りフォールバック: facingMode が信頼できない環境（ミラー出力なのに
           // user 判定されない仮想カメラ等）では正しい向きでも未検出となるため、左右反転
           // した canvas でも検出を試みる。検出できた場合は座標を元の向きに戻して返す。
-          if (codes.length === 0 && this.failureFrames >= MIRROR_FALLBACK_THRESHOLD) {
+          // 試行は MIRROR_TRIAL_DURATION フレーム継続したのち休止し、MIRROR_TRIAL_PERIOD
+          // ごとに繰り返すことで、長時間の検出失敗で「試行中」状態が固着しないようにする。
+          const inTrialWindow =
+            codes.length === 0 &&
+            this.failureFrames >= MIRROR_FALLBACK_THRESHOLD &&
+            (this.failureFrames - MIRROR_FALLBACK_THRESHOLD) % MIRROR_TRIAL_PERIOD <
+              MIRROR_TRIAL_DURATION;
+          if (inTrialWindow) {
             if (!this.mirrorTrialActive) {
               this.mirrorTrialActive = true;
               this.onRuntimeChange();
@@ -310,6 +323,10 @@ export class Scanner {
                 codes = unflipCodesHorizontally(flippedCodes, w);
               }
             }
+          } else if (this.mirrorTrialActive) {
+            // 試行ウィンドウを外れた（成功 or 休止フェーズ突入）→ 状態を解除
+            this.mirrorTrialActive = false;
+            this.onRuntimeChange();
           }
           if (codes.length > 0) {
             this.failureFrames = 0;

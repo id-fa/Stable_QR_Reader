@@ -219,7 +219,10 @@ let zoomed = false;
 
 function applyVideoTransforms(): void {
   const parts: string[] = [];
-  if (scanner.isMirrored()) parts.push('scaleX(-1)');
+  // facingMode 由来の表示ミラーと、鏡像読み取り試行中の追加反転は XOR で合成する。
+  // 両方が true の場合は結果として等倍になり、デコーダが見ている向きと画面表示が一致する。
+  const mirroredDisplay = scanner.isMirrored() !== scanner.isMirrorTrialActive();
+  if (mirroredDisplay) parts.push('scaleX(-1)');
   if (zoomed) parts.push('scale(2)');
   const t = parts.join(' ') || 'none';
   video.style.transform = t;
